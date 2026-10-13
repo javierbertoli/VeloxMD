@@ -25,6 +25,8 @@ enum KeyAction {
   decreaseFontSize('decrease_font_size'),
   resetFontSize('reset_font_size'),
   exportPdf('export_pdf'),
+  navigateBack('navigate_back'),
+  navigateForward('navigate_forward'),
   quit('quit');
 
   const KeyAction(this.configKey);
@@ -53,6 +55,8 @@ class KeybindingsService {
     KeyAction.decreaseFontSize: ['ctrl+minus'],
     KeyAction.resetFontSize: ['ctrl+zero'],
     KeyAction.exportPdf: ['ctrl+p', 'ctrl+e'],
+    KeyAction.navigateBack: ['alt+arrowleft'],
+    KeyAction.navigateForward: ['alt+arrowright'],
     KeyAction.quit: ['ctrl+q'],
   };
 
@@ -154,6 +158,10 @@ class KeybindingsService {
       'zero': '0',
       'numpadadd': '+',
       'numpadsubtract': '-',
+      'arrowleft': 'Left',
+      'arrowright': 'Right',
+      'arrowup': 'Up',
+      'arrowdown': 'Down',
     };
     if (specials.containsKey(t)) return specials[t]!;
     if (RegExp(r'^f\d{1,2}$').hasMatch(t)) return t.toUpperCase();

@@ -6,11 +6,13 @@ class TocPanel extends StatelessWidget {
   const TocPanel({
     super.key,
     required this.entries,
-    required this.scrollController,
+    required this.onEntrySelected,
   });
 
   final List<TocEntry> entries;
-  final ScrollController scrollController;
+
+  /// Called when the user taps an entry; the owner scrolls to its heading.
+  final ValueChanged<TocEntry> onEntrySelected;
 
   @override
   Widget build(BuildContext context) {
@@ -53,7 +55,7 @@ class TocPanel extends StatelessWidget {
                   itemCount: entries.length,
                   itemBuilder: (context, i) => _TocItem(
                     entry: entries[i],
-                    onTap: () => _scrollToEntry(entries[i]),
+                    onTap: () => onEntrySelected(entries[i]),
                   ),
                 ),
               ),
@@ -61,20 +63,6 @@ class TocPanel extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  void _scrollToEntry(TocEntry entry) {
-    // Each heading occupies roughly 60 px; this is a best-effort scroll.
-    // A more accurate approach would require GlobalKey tracking in the viewer.
-    if (scrollController.hasClients) {
-      final target = entry.index * 60.0;
-      final maxScroll = scrollController.position.maxScrollExtent;
-      scrollController.animateTo(
-        target.clamp(0.0, maxScroll),
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
-    }
   }
 }
 

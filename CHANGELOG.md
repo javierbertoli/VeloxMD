@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### ✨ Features
+- **Link navigation**: links in a document are now followed.
+  - `#section` links scroll precisely to the heading (GitHub-style anchors,
+    repeated headings get `-1`, `-2`, … suffixes).
+  - Relative, absolute and `file://` links to other Markdown files open in the
+    same window, optionally at an anchor (`other.md#section`).
+  - Web links, `mailto:` and other existing local files open in the default app.
+  - Back / forward history (`Alt+Left` / `Alt+Right`, configurable as
+    `navigate_back` / `navigate_forward` in `keybindings.json`; toolbar arrows;
+    mouse side buttons) restores the previous scroll position.
+  - Unreachable targets show a "Link target not found" notice.
+  - The table of contents now scrolls precisely to each heading (undoable with Back).
+
+---
+
 ## 1.0.11 - 2026-10-07
 
 ### ✨ Features

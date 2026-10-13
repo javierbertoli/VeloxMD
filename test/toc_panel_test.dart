@@ -7,15 +7,12 @@ void main() {
   testWidgets('shows an empty state when there are no headings', (
     tester,
   ) async {
-    final controller = ScrollController();
-    addTearDown(controller.dispose);
-
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: SizedBox(
             height: 400,
-            child: TocPanel(entries: const [], scrollController: controller),
+            child: TocPanel(entries: const [], onEntrySelected: (_) {}),
           ),
         ),
       ),
@@ -25,9 +22,6 @@ void main() {
   });
 
   testWidgets('renders entries from the markdown outline', (tester) async {
-    final controller = ScrollController();
-    addTearDown(controller.dispose);
-
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -48,7 +42,7 @@ void main() {
                   index: 1,
                 ),
               ],
-              scrollController: controller,
+              onEntrySelected: (_) {},
             ),
           ),
         ),

@@ -16,6 +16,10 @@ class FileService {
   static const _maxFileSizeBytes = 50 * 1024 * 1024; // 50 MB
   static const _supportedExtensions = {'.md', '.markdown', '.mdc', '.txt'};
 
+  /// Whether [path] has an extension VeloxMD opens as a Document.
+  static bool isSupported(String path) =>
+      _supportedExtensions.contains(_extension(path));
+
   static Future<String> readMarkdown(String path) async {
     final file = File(path);
 

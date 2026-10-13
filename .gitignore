@@ -36,3 +36,6 @@ test/failures/
 
 # Dist
 dist/*
+
+# ai-pod host command logs
+.ai-pod/

@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show compute;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:window_manager/window_manager.dart';
@@ -16,9 +18,11 @@ import '../widgets/document_footer.dart';
 import '../dialogs/about_dialog.dart';
 import '../models/toc_entry.dart';
 import '../models/document_stats.dart';
+import '../models/navigation_history.dart';
 import '../services/file_service.dart';
 import '../services/font_service.dart';
 import '../services/keybindings_service.dart';
+import '../services/link_resolver.dart';
 import '../services/pdf_export_service.dart';
 
 class ViewerScreen extends StatefulWidget {
@@ -66,6 +70,8 @@ class _ViewerScreenState extends State<ViewerScreen> with WindowListener {
   StreamSubscription<FileSystemEvent>? _fileWatchSub;
   bool _isPickerOpen = false;
   bool _isExportingPdf = false;
+  final _history = NavigationHistory();
+  late final _headingKeys = HeadingKeys(_scrollController);
 
   /// Debounced search query actually applied to the rendered view and the match
   /// count. Typing updates the text field immediately, but re-parsing/rendering
@@ -188,51 +194,197 @@ class _ViewerScreenState extends State<ViewerScreen> with WindowListener {
     }
   }
 
-  Future<void> _openFile(String path) async {
-    // Different document: drop cached diagram keys from the previous file so
-    // stale GlobalKeys do not accumulate across opens.
-    if (path != _filePath) {
-      clearMermaidViewKeyCache();
+  /// Opens [path] as a new Navigation History entry (file picker, drop,
+  /// command line). Failures replace the view with an error screen.
+  Future<void> _openFile(String path) => _navigateTo(path);
+
+  /// Opens the Document at [path], optionally scrolling to [anchor], and
+  /// pushes it onto the Navigation History when it loads. With [fromLink],
+  /// failures are reported as a notice and the current Document stays open.
+  Future<void> _navigateTo(
+    String path, {
+    String? anchor,
+    bool fromLink = false,
+  }) async {
+    _rememberScroll();
+    final loaded = await _loadDocument(
+      path,
+      anchor: anchor,
+      reportErrorsAsNotice: fromLink,
+    );
+    if (loaded && mounted) setState(() => _history.visit(path));
+  }
+
+  Future<bool> _loadDocument(
+    String path, {
+    double scrollOffset = 0,
+    String? anchor,
+    bool reportErrorsAsNotice = false,
+  }) async {
+    if (!reportErrorsAsNotice) {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
     }
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
 
     try {
       final content = await FileService.readMarkdown(path);
-      _watchFile(path);
 
       final statsFuture =
           Future.microtask(() => DocumentStats.fromMarkdown(content));
-      final tocFuture =
-          Future.microtask(() => TocEntry.fromMarkdown(content));
+      // Full Markdown parse (must match what the viewer renders): run it off
+      // the UI thread so large documents do not freeze the window.
+      final tocFuture = compute(computeTocEntries, content);
 
       final stats = await statsFuture;
       final tocEntries = await tocFuture;
 
-      if (!mounted) return;
+      if (!mounted) return false;
 
+      // Different document: drop cached diagram keys from the previous file so
+      // stale GlobalKeys do not accumulate across opens.
+      if (path != _filePath) {
+        clearMermaidViewKeyCache();
+      }
+      _watchFile(path);
       setState(() {
         _filePath = path;
         _markdownContent = content;
         _stats = stats;
         _isLoading = false;
+        _errorMessage = null;
         _tocEntries = tocEntries;
         _recomputeMatchCount();
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (anchor != null) {
+          _scrollToAnchor(anchor, animate: false);
+        } else {
+          _jumpToOffset(scrollOffset);
+        }
       });
       try {
         await windowManager.setTitle(p.basename(path));
       } catch (_) {}
+      return true;
     } catch (e) {
-      if (mounted) {
+      if (!mounted) return false;
+      final message =
+          e is FileServiceException ? e.message : 'Error opening file: $e';
+      if (reportErrorsAsNotice) {
+        _showNotice(message);
+      } else {
         setState(() {
           _isLoading = false;
-          _errorMessage =
-              e is FileServiceException ? e.message : 'Error opening file: $e';
+          _errorMessage = message;
         });
       }
+      return false;
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Links and Navigation History
+  // ---------------------------------------------------------------------------
+
+  Future<void> _onLinkTap(String href) async {
+    final currentPath = _filePath;
+    if (currentPath == null) return;
+    final target = await LinkResolver.resolve(href, currentPath: currentPath);
+    if (!mounted) return;
+
+    switch (target) {
+      case AnchorTarget(:final anchor):
+        _followAnchor(anchor, href);
+      case DocumentTarget(:final path, :final anchor):
+        await _navigateTo(path, anchor: anchor, fromLink: true);
+      case ExternalTarget(:final uri):
+        var launched = false;
+        try {
+          launched = await launchUrl(uri);
+        } on Exception {
+          launched = false;
+        }
+        if (!launched) _showNotice('Could not open link: $href');
+      case UnreachableTarget():
+        _showNotice('Link target not found: $href');
+    }
+  }
+
+  /// Follows an Anchor link in the current Document.
+  void _followAnchor(String anchor, String href) {
+    final entry = _findHeading(anchor);
+    if (entry == null) {
+      _showNotice('Link target not found: $href');
+      return;
+    }
+    _jumpToHeading(entry);
+  }
+
+  /// Scrolls to [entry] as a new history entry (Anchor links and TOC).
+  void _jumpToHeading(TocEntry entry) {
+    if (_showSource) return;
+    _rememberScroll();
+    setState(() => _history.visit(_filePath!));
+    _headingKeys.scrollTo(entry.index, headingCount: _tocEntries.length);
+  }
+
+  /// Scrolls to [anchor] without touching history. Reports a missing anchor.
+  void _scrollToAnchor(String anchor, {bool animate = true}) {
+    if (_showSource) return;
+    final entry = _findHeading(anchor);
+    if (entry == null) {
+      _showNotice('Link target not found: #$anchor');
+      return;
+    }
+    _headingKeys.scrollTo(
+      entry.index,
+      headingCount: _tocEntries.length,
+      animate: animate,
+    );
+  }
+
+  TocEntry? _findHeading(String anchor) {
+    final wanted = anchor.toLowerCase();
+    return _tocEntries.where((e) => e.anchor == wanted).firstOrNull;
+  }
+
+  void _rememberScroll() {
+    if (_scrollController.hasClients) {
+      _history.updateCurrentScroll(_scrollController.offset);
+    }
+  }
+
+  void _jumpToOffset(double offset) {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    _scrollController.jumpTo(
+      offset.clamp(position.minScrollExtent, position.maxScrollExtent),
+    );
+  }
+
+  Future<void> _goBack() => _travel(_history.back);
+
+  Future<void> _goForward() => _travel(_history.forward);
+
+  Future<void> _travel(HistoryEntry? Function() move) async {
+    _rememberScroll();
+    final entry = move();
+    if (entry == null) return;
+    setState(() {});
+    if (entry.path == _filePath && _errorMessage == null) {
+      _jumpToOffset(entry.scrollOffset);
+    } else {
+      await _loadDocument(entry.path, scrollOffset: entry.scrollOffset);
+    }
+  }
+
+  void _showNotice(String message) {
+    ScaffoldMessenger.maybeOf(context)
+      ?..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _watchFile(String path) {
@@ -248,8 +400,9 @@ class _ViewerScreenState extends State<ViewerScreen> with WindowListener {
       final content = await FileService.readMarkdown(_filePath!);
       final statsFuture =
           Future.microtask(() => DocumentStats.fromMarkdown(content));
-      final tocFuture =
-          Future.microtask(() => TocEntry.fromMarkdown(content));
+      // Full Markdown parse (must match what the viewer renders): run it off
+      // the UI thread so large documents do not freeze the window.
+      final tocFuture = compute(computeTocEntries, content);
 
       final stats = await statsFuture;
       final tocEntries = await tocFuture;
@@ -482,6 +635,10 @@ class _ViewerScreenState extends State<ViewerScreen> with WindowListener {
           a: const _ResetFontSizeIntent(),
         for (final a in widget.keybindings[KeyAction.exportPdf])
           a: const _ExportPdfIntent(),
+        for (final a in widget.keybindings[KeyAction.navigateBack])
+          a: const _BackIntent(),
+        for (final a in widget.keybindings[KeyAction.navigateForward])
+          a: const _ForwardIntent(),
       };
 
   Map<Type, Action<Intent>> get _actions => {
@@ -515,6 +672,10 @@ class _ViewerScreenState extends State<ViewerScreen> with WindowListener {
         _ExportPdfIntent: CallbackAction<_ExportPdfIntent>(
           onInvoke: (_) => _exportToPdf(),
         ),
+        _BackIntent: CallbackAction<_BackIntent>(onInvoke: (_) => _goBack()),
+        _ForwardIntent: CallbackAction<_ForwardIntent>(
+          onInvoke: (_) => _goForward(),
+        ),
       };
 
   // ---------------------------------------------------------------------------
@@ -534,12 +695,22 @@ class _ViewerScreenState extends State<ViewerScreen> with WindowListener {
               final file = details.files.firstOrNull;
               if (file != null) _openFile(file.path);
             },
-            child: Scaffold(
-              appBar: _buildAppBar(context),
-              body: _buildBody(context),
-              bottomNavigationBar: _filePath != null
-                  ? DocumentFooter(stats: _stats, version: _version)
-                  : null,
+            child: Listener(
+              // Mouse side buttons navigate the history like a browser.
+              onPointerDown: (event) {
+                if (event.buttons & kBackMouseButton != 0) {
+                  _goBack();
+                } else if (event.buttons & kForwardMouseButton != 0) {
+                  _goForward();
+                }
+              },
+              child: Scaffold(
+                appBar: _buildAppBar(context),
+                body: _buildBody(context),
+                bottomNavigationBar: _filePath != null
+                    ? DocumentFooter(stats: _stats, version: _version)
+                    : null,
+              ),
             ),
           ),
         ),
@@ -555,6 +726,20 @@ class _ViewerScreenState extends State<ViewerScreen> with WindowListener {
         style: const TextStyle(fontSize: 16),
       ),
       actions: [
+        if (_filePath != null) ...[
+          IconButton(
+            icon: const Icon(Icons.arrow_back),
+            tooltip:
+                'Back (${widget.keybindings.label(KeyAction.navigateBack)})',
+            onPressed: _history.canGoBack ? _goBack : null,
+          ),
+          IconButton(
+            icon: const Icon(Icons.arrow_forward),
+            tooltip:
+                'Forward (${widget.keybindings.label(KeyAction.navigateForward)})',
+            onPressed: _history.canGoForward ? _goForward : null,
+          ),
+        ],
         if (_filePath != null)
           IconButton(
             icon: Icon(_searchVisible ? Icons.search_off : Icons.search),
@@ -711,7 +896,7 @@ class _ViewerScreenState extends State<ViewerScreen> with WindowListener {
         if (_tocVisible)
           TocPanel(
             entries: _tocEntries,
-            scrollController: _scrollController,
+            onEntrySelected: _jumpToHeading,
           ),
         if (_searchVisible && _filePath != null)
           SearchPanel(
@@ -743,6 +928,8 @@ class _ViewerScreenState extends State<ViewerScreen> with WindowListener {
                   fontScale: _fontScale,
                   bodyFontFamily: widget.fonts.uiFontFamily,
                   codeFontFamily: widget.fonts.codeFontFamily,
+                  headingKeys: _headingKeys,
+                  onLinkTap: _onLinkTap,
                 ),
         ),
       ],
@@ -835,4 +1022,10 @@ DocumentStats computeDocumentStats(String content) =>
 List<TocEntry> computeTocEntries(String content) =>
     TocEntry.fromMarkdown(content);
 
+class _BackIntent extends Intent {
+  const _BackIntent();
+}
 
+class _ForwardIntent extends Intent {
+  const _ForwardIntent();
+}

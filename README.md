@@ -74,6 +74,10 @@ Otherwise, see [Building from source](#building-from-source) below.
 - **View document source:** press `Ctrl+U` to toggle between raw Markdown and rendered view.
 - **Reload a file:** press `Ctrl+R` or `F5`.
 - **Change font size:** press `Ctrl++`, `Ctrl+-`, or `Ctrl+0`.
+- **Follow links:** click a link to jump to a heading (`#section`), open another
+  local Markdown file (`other.md`, `other.md#section`), or open web links and
+  other files in your default app. Go back / forward with `Alt+Left` /
+  `Alt+Right`, the toolbar arrows, or the mouse side buttons.
 
 ### Keyboard shortcuts
 
@@ -85,6 +89,7 @@ Otherwise, see [Building from source](#building-from-source) below.
 | `Ctrl+F` | Show / hide the search panel |
 | `Ctrl++` / `Ctrl+-` / `Ctrl+0` | Increase / decrease / reset font size |
 | `Ctrl+R` / `F5` | Reload the current file |
+| `Alt+Left` / `Alt+Right` | Back / forward through followed links |
 | `Ctrl+Q` | Quit |
 
 These are defaults, not fixed key combinations — VeloxMD reads them from a
@@ -109,6 +114,8 @@ the main-row key or the numpad's), so you don't need to list both explicitly.
   "increase_font_size": ["ctrl+plus"],
   "decrease_font_size": ["ctrl+minus"],
   "reset_font_size": ["ctrl+zero"],
+  "navigate_back": ["alt+arrowleft"],
+  "navigate_forward": ["alt+arrowright"],
   "quit": ["ctrl+q"]
 }
 ```
@@ -216,10 +223,12 @@ lib/
 │   └── dialogs/
 │       └── about_dialog.dart – about dialog with project and developer info
 ├── models/
-│   ├── toc_entry.dart       – heading model + Markdown parser
+│   ├── toc_entry.dart       – heading model, GitHub-style anchors
+│   ├── navigation_history.dart – back/forward history of visited documents
 │   └── document_stats.dart  – document statistics and token calculation
 └── services/
-    └── file_service.dart    – async file reading with validation
+    ├── file_service.dart    – async file reading with validation
+    └── link_resolver.dart   – classifies link targets (anchor, document, external)
 ```
 
 ### Desktop integration (Linux)

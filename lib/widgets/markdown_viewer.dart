@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderAbstractViewport;
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'dart:convert';
 
@@ -29,6 +30,91 @@ GlobalKey _mermaidViewKey(String source, bool isDark) =>
 /// so keys for diagrams that no longer exist do not accumulate.
 void clearMermaidViewKeyCache() => _mermaidViewKeys.clear();
 
+/// Tracks the rendered headings, indexed in render order (the same order as
+/// [TocEntry.index]), so the viewer can scroll precisely to a Heading when
+/// following an Anchor link or a table-of-contents entry.
+///
+/// The document is a lazily built list: headings far from the viewport are
+/// not built yet. [scrollTo] therefore jumps towards the heading until it is
+/// built, then reveals it exactly.
+class HeadingKeys {
+  HeadingKeys(this.scrollController);
+
+  final ScrollController scrollController;
+  final Map<int, BuildContext> _built = <int, BuildContext>{};
+
+  /// Whether heading [index] is currently built.
+  bool isBuilt(int index) => _built[index]?.mounted ?? false;
+
+  void _register(int index, BuildContext context) => _built[index] = context;
+
+  void _unregister(int index, BuildContext context) {
+    if (identical(_built[index], context)) _built.remove(index);
+  }
+
+  /// Scrolls so heading [index] (of [headingCount]) sits at the top of the
+  /// viewport. Returns false when the heading cannot be reached.
+  Future<bool> scrollTo(
+    int index, {
+    required int headingCount,
+    bool animate = true,
+  }) async {
+    if (index < 0 || index >= headingCount) return false;
+    for (var attempt = 0; attempt < 200; attempt++) {
+      final context = _built[index];
+      if (context != null && context.mounted) {
+        return _reveal(context, animate: animate);
+      }
+      if (!scrollController.hasClients) return false;
+      final position = scrollController.position;
+      final double next;
+      if (attempt == 0) {
+        // First guess: assume headings are spread evenly.
+        next = position.maxScrollExtent * index / headingCount;
+      } else {
+        final builtIndices = _built.keys;
+        final step = position.viewportDimension * 0.9;
+        final goDown = builtIndices.isEmpty ||
+            builtIndices.every((built) => built < index);
+        next = position.pixels + (goDown ? step : -step);
+      }
+      final clamped =
+          next.clamp(position.minScrollExtent, position.maxScrollExtent);
+      if (attempt > 0 && clamped == position.pixels) return false;
+      position.jumpTo(clamped);
+      await WidgetsBinding.instance.endOfFrame;
+    }
+    return false;
+  }
+
+  bool _reveal(BuildContext context, {required bool animate}) {
+    final renderObject = context.findRenderObject();
+    final viewport = renderObject == null
+        ? null
+        : RenderAbstractViewport.maybeOf(renderObject);
+    if (renderObject == null || viewport == null) return false;
+
+    final position = Scrollable.of(context).position;
+    final marker = context.widget as _HeadingMarker;
+    // The marker sits vertically centred on the heading's first line; back off
+    // half a line plus a small gap so the whole heading is visible.
+    final target = (viewport.getOffsetToReveal(renderObject, 0).offset -
+            marker.lineHeight / 2 -
+            8)
+        .clamp(position.minScrollExtent, position.maxScrollExtent);
+    if (animate) {
+      position.animateTo(
+        target,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    } else {
+      position.jumpTo(target);
+    }
+    return true;
+  }
+}
+
 /// The Markdown extension set used by the viewer. When [query] is non-empty a
 /// [_SearchHighlightSyntax] is prepended so every match is wrapped in a
 /// highlight element. Shared between the rendered widget and
@@ -39,6 +125,12 @@ md.ExtensionSet buildMarkdownExtensionSet(String query) => md.ExtensionSet(
         const _MermaidFenceSyntax(),
         const _CodeFenceSyntax(),
         ...md.ExtensionSet.gitHubFlavored.blockSyntaxes,
+        // Same detection as the standard heading syntaxes (and therefore
+        // TocEntry.fromMarkdown), but each heading gets a marker element so the
+        // viewer can attach a scroll key to it. Extension syntaxes take
+        // precedence over the standard ones.
+        const _MarkedSetextHeaderSyntax(),
+        const _MarkedHeaderSyntax(),
       ],
       <md.InlineSyntax>[
         if (query.isNotEmpty) _SearchHighlightSyntax(query),
@@ -470,6 +562,8 @@ class MarkdownViewer extends StatelessWidget {
     this.codeFontFamily,
     this.horizontalPadding = 32,
     this.fontScale = 1.0,
+    this.headingKeys,
+    this.onLinkTap,
   });
 
   final String content;
@@ -487,6 +581,13 @@ class MarkdownViewer extends StatelessWidget {
   final String? codeFontFamily;
   final double horizontalPadding;
   final double fontScale;
+
+  /// Receives a key per rendered heading, for precise Anchor scrolling.
+  final HeadingKeys? headingKeys;
+
+  /// Called with the raw href of a tapped Link. When null, links are handed
+  /// straight to the system (url_launcher).
+  final ValueChanged<String>? onLinkTap;
 
   @override
   Widget build(BuildContext context) {
@@ -534,6 +635,7 @@ class MarkdownViewer extends StatelessWidget {
           codeFontFamily: codeFontFamily ?? 'monospace',
           fontScale: fontScale,
         ),
+        _headingMarkerTag: _HeadingMarkerBuilder(headingKeys),
         if (query.isNotEmpty)
           _SearchHighlightSyntax.tag: _SearchHighlightBuilder(
             backgroundColor: matchBackgroundColor,
@@ -545,6 +647,10 @@ class MarkdownViewer extends StatelessWidget {
       },
       onTapLink: (text, href, title) async {
         if (href == null) return;
+        if (onLinkTap != null) {
+          onLinkTap!(href);
+          return;
+        }
         final uri = Uri.tryParse(href);
         if (uri != null && await canLaunchUrl(uri)) {
           await launchUrl(uri);
@@ -631,6 +737,96 @@ class _SearchHighlightSyntax extends md.InlineSyntax {
     parser.addNode(md.Element.text(tag, match[0]!));
     return true;
   }
+}
+
+const _headingMarkerTag = 'heading-marker';
+
+/// Prepends an empty [_headingMarkerTag] element to a parsed heading.
+T _markHeading<T extends md.Node?>(T node) {
+  if (node is md.Element) {
+    node.children?.insert(0, md.Element.empty(_headingMarkerTag));
+  }
+  return node;
+}
+
+class _MarkedHeaderSyntax extends md.HeaderSyntax {
+  const _MarkedHeaderSyntax();
+
+  @override
+  md.Node parse(md.BlockParser parser) => _markHeading(super.parse(parser));
+}
+
+class _MarkedSetextHeaderSyntax extends md.SetextHeaderSyntax {
+  const _MarkedSetextHeaderSyntax();
+
+  @override
+  md.Node? parse(md.BlockParser parser) => _markHeading(super.parse(parser));
+}
+
+/// Renders each heading marker as a zero-size [_HeadingMarker] registered
+/// with [headingKeys], numbering headings in render order.
+class _HeadingMarkerBuilder extends MarkdownElementBuilder {
+  _HeadingMarkerBuilder(this.headingKeys);
+
+  final HeadingKeys? headingKeys;
+  int _headingIndex = 0;
+
+  @override
+  Widget visitElementAfterWithContext(
+    BuildContext context,
+    md.Element element,
+    TextStyle? preferredStyle,
+    TextStyle? parentStyle,
+  ) {
+    final style = parentStyle ?? preferredStyle;
+    return _HeadingMarker(
+      index: _headingIndex++,
+      headingKeys: headingKeys,
+      lineHeight: (style?.fontSize ?? 16) * (style?.height ?? 1.2),
+    );
+  }
+}
+
+class _HeadingMarker extends StatefulWidget {
+  const _HeadingMarker({
+    required this.index,
+    required this.headingKeys,
+    required this.lineHeight,
+  });
+
+  final int index;
+  final HeadingKeys? headingKeys;
+  final double lineHeight;
+
+  @override
+  State<_HeadingMarker> createState() => _HeadingMarkerState();
+}
+
+class _HeadingMarkerState extends State<_HeadingMarker> {
+  @override
+  void initState() {
+    super.initState();
+    widget.headingKeys?._register(widget.index, context);
+  }
+
+  @override
+  void didUpdateWidget(_HeadingMarker oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.index != widget.index ||
+        oldWidget.headingKeys != widget.headingKeys) {
+      oldWidget.headingKeys?._unregister(oldWidget.index, context);
+      widget.headingKeys?._register(widget.index, context);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.headingKeys?._unregister(widget.index, context);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }
 
 class _MermaidFenceSyntax extends md.BlockSyntax {

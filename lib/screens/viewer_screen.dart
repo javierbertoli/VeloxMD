@@ -59,6 +59,10 @@ class _ViewerScreenState extends State<ViewerScreen> with WindowListener {
   static const double _minMargin = 0;
   static const double _maxMargin = 320;
   double _fontScale = 1.0;
+  bool _useOpenDyslexic = false;
+  bool _fontPreferenceReady = false;
+  bool _savingFontPreference = false;
+  static const String _openDyslexicPreference = 'use_opendyslexic';
   static const double _minFontScale = 0.5;
   static const double _maxFontScale = 3.0;
   static const double _fontScaleStep = 0.1;
@@ -88,6 +92,7 @@ class _ViewerScreenState extends State<ViewerScreen> with WindowListener {
     windowManager.addListener(this);
     _loadMarginPreference();
     _loadFontScalePreference();
+    _loadDocumentFontPreference();
     if (widget.initialFile != null) {
       _openFile(widget.initialFile!);
     }
@@ -127,6 +132,67 @@ class _ViewerScreenState extends State<ViewerScreen> with WindowListener {
 
   Future<void> _changeFontScale(double delta) =>
       _setFontScale(_fontScale + delta);
+
+  String get _documentBodyFontFamily => _useOpenDyslexic
+      ? FontService.openDyslexicFontFamily
+      : widget.fonts.uiFontFamily;
+
+  String get _documentCodeFontFamily => _useOpenDyslexic
+      ? FontService.openDyslexicFontFamily
+      : widget.fonts.codeFontFamily;
+
+  Future<void> _loadDocumentFontPreference() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final enabled = prefs.getBool(_openDyslexicPreference) ?? false;
+      if (!mounted) return;
+      setState(() {
+        _useOpenDyslexic = enabled;
+        _fontPreferenceReady = true;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _fontPreferenceReady = true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to load document font preference: $e')),
+      );
+    }
+  }
+
+  Future<void> _toggleDocumentFont() async {
+    if (!_fontPreferenceReady || _savingFontPreference) return;
+    final previous = _useOpenDyslexic;
+    SharedPreferences? prefs;
+    setState(() {
+      _useOpenDyslexic = !previous;
+      _savingFontPreference = true;
+    });
+    try {
+      prefs = await SharedPreferences.getInstance();
+      if (!await prefs.setBool(_openDyslexicPreference, !previous)) {
+        throw StateError('Preference storage rejected the change');
+      }
+    } catch (e) {
+      var message = 'Failed to save document font preference: $e';
+      // SharedPreferences updates its cache even when the platform write fails.
+      if (prefs != null) {
+        try {
+          await prefs.reload();
+        } catch (reloadError) {
+          message += '\nFailed to reload preferences: $reloadError';
+        }
+      }
+      if (!mounted) return;
+      setState(() => _useOpenDyslexic = previous);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _savingFontPreference = false);
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -778,6 +844,20 @@ class _ViewerScreenState extends State<ViewerScreen> with WindowListener {
                 : 'Export to PDF (${widget.keybindings.label(KeyAction.exportPdf)})',
             onPressed: _isExportingPdf ? null : _exportToPdf,
           ),
+        Semantics(
+          toggled: _useOpenDyslexic,
+          child: IconButton(
+            icon: const Icon(Icons.font_download_outlined),
+            selectedIcon: const Icon(Icons.font_download),
+            isSelected: _useOpenDyslexic,
+            tooltip: _useOpenDyslexic
+                ? 'Disable OpenDyslexic font'
+                : 'Enable OpenDyslexic font',
+            onPressed: _fontPreferenceReady && !_savingFontPreference
+                ? _toggleDocumentFont
+                : null,
+          ),
+        ),
         IconButton(
           icon: Icon(isDark ? Icons.light_mode : Icons.dark_mode),
           tooltip: 'Toggle theme',
@@ -916,7 +996,7 @@ class _ViewerScreenState extends State<ViewerScreen> with WindowListener {
                   scrollController: _scrollController,
                   horizontalPadding: _horizontalMargin,
                   fontScale: _fontScale,
-                  codeFontFamily: widget.fonts.codeFontFamily,
+                  codeFontFamily: _documentCodeFontFamily,
                 )
               : MarkdownViewer(
                   content: _markdownContent,
@@ -926,8 +1006,8 @@ class _ViewerScreenState extends State<ViewerScreen> with WindowListener {
                   activeMatchIndex: _activeMatchIndex,
                   horizontalPadding: _horizontalMargin,
                   fontScale: _fontScale,
-                  bodyFontFamily: widget.fonts.uiFontFamily,
-                  codeFontFamily: widget.fonts.codeFontFamily,
+                  bodyFontFamily: _documentBodyFontFamily,
+                  codeFontFamily: _documentCodeFontFamily,
                   headingKeys: _headingKeys,
                   onLinkTap: _onLinkTap,
                 ),

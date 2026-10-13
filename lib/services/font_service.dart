@@ -27,6 +27,8 @@ class FontConfig {
 /// `%APPDATA%\veloxmd\fonts.json` on Windows); an empty/missing entry there
 /// means "keep following the desktop".
 class FontService {
+  static const String openDyslexicFontFamily = 'OpenDyslexic';
+
   /// Bundled fallback used when there's no override and the desktop's font
   /// can't be determined (e.g. `fc-match` isn't installed).
   static const String fallbackUiFontFamily = 'Inter';
@@ -64,8 +66,9 @@ class FontService {
     return FontConfig(
       uiFontFamily:
           uiOverride ?? await _detectFont('sans-serif') ?? fallbackUiFontFamily,
-      codeFontFamily:
-          codeOverride ?? await _detectFont('monospace') ?? fallbackCodeFontFamily,
+      codeFontFamily: codeOverride ??
+          await _detectFont('monospace') ??
+          fallbackCodeFontFamily,
     );
   }
 

@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### ✨ Features
+- **OpenDyslexic document font**: a toolbar toggle switches rendered Markdown
+  and read-only source text, including code, to bundled OpenDyslexic.
+  The choice persists across restarts; disabling it restores configured/system
+  fonts. All four font styles and their SIL OFL license ship with the app.
 - **Link navigation**: links in a document are now followed.
   - `#section` links scroll precisely to the heading (GitHub-style anchors,
     repeated headings get `-1`, `-2`, … suffixes).

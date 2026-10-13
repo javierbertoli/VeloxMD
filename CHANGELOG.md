@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.1.0 - 2026-10-13
+
 ### ✨ Features
 - **OpenDyslexic document font**: a toolbar toggle switches rendered Markdown
   and read-only source text, including code, to bundled OpenDyslexic.

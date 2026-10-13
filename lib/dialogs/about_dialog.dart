@@ -6,7 +6,7 @@ import '../services/update_checker.dart';
 class VeloxAboutDialog extends StatefulWidget {
   const VeloxAboutDialog({super.key});
 
-  static const String version = '1.0.11';
+  static const String version = '1.1.0';
   static const String repositoryUrl = 'https://github.com/lbonomo/VeloxMD';
   static const String issuesUrl = '$repositoryUrl/issues';
   static const String discussionsUrl = '$repositoryUrl/discussions';

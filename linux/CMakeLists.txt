@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.13)
-project(veloxmd VERSION "0.2.0")
+project(veloxmd VERSION "1.1.0")
 
 set(BINARY_NAME "veloxmd")
 set(APPLICATION_ID "dev.veloxmd.app")

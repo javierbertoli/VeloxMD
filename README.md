@@ -23,14 +23,29 @@ nothing you open ever leaves your computer.
 
 ## Screenshots
 
-Reading a document, with the table of contents, live search, and a diagram all
-in one clean window:
+The Mermaid demo combines regular Markdown with an inline rendered flowchart:
 
-![VeloxMD main window showing a document with table of contents, search, and a rendered diagram](docs/screenshots/screenshot-01.png)
+![VeloxMD displaying the Mermaid demo with an inline rendered flowchart](docs/screenshots/screenshot-01.png)
 
-Click any diagram to see it full screen, where you can zoom and pan freely:
+Click the flowchart to see it full screen, where you can zoom and pan freely:
 
-![A Mermaid flowchart shown full screen in VeloxMD](docs/screenshots/screenshot-02.png)
+![The Mermaid flowchart displayed full screen in VeloxMD](docs/screenshots/screenshot-02.png)
+
+Mermaid sequence diagrams render in the document in both light and dark themes:
+
+![A Mermaid sequence diagram rendered in the light theme](docs/screenshots/diagram-light.png)
+
+![A Mermaid sequence diagram rendered in the dark theme](docs/screenshots/diagram-dark.png)
+
+The dark theme also styles regular Markdown and syntax-highlighted code blocks:
+
+![VeloxMD displaying syntax-highlighted code blocks in the dark theme](docs/screenshots/code-blocks.png)
+
+![VeloxMD displaying the demo document in the dark theme](docs/screenshots/dark-mode.png)
+
+The OpenDyslexic font option changes the document typography:
+
+![A sequence diagram and its Markdown source displayed with OpenDyslexic](docs/screenshots/OpenDyslexic.png)
 
 ## Why you'll like it
 

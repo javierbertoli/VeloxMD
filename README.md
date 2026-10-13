@@ -31,6 +31,22 @@ Click the flowchart to see it full screen, where you can zoom and pan freely:
 
 ![The Mermaid flowchart displayed full screen in VeloxMD](docs/screenshots/screenshot-02.png)
 
+Mermaid sequence diagrams render in the document in both light and dark themes:
+
+![A Mermaid sequence diagram rendered in the light theme](docs/screenshots/diagram-light.png)
+
+![A Mermaid sequence diagram rendered in the dark theme](docs/screenshots/diagram-dark.png)
+
+The dark theme also styles regular Markdown and syntax-highlighted code blocks:
+
+![VeloxMD displaying syntax-highlighted code blocks in the dark theme](docs/screenshots/code-blocks.png)
+
+![VeloxMD displaying the demo document in the dark theme](docs/screenshots/dark-mode.png)
+
+The OpenDyslexic font option changes the document typography:
+
+![A sequence diagram and its Markdown source displayed with OpenDyslexic](docs/screenshots/OpenDyslexic.png)
+
 ## Why you'll like it
 
 - ⚡ **Instant** — files open and display immediately, even large ones.

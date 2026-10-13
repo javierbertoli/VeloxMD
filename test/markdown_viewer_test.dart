@@ -4,6 +4,98 @@ import 'package:veloxmd/widgets/markdown_viewer.dart';
 import 'package:veloxmd/widgets/mermaid_view.dart';
 
 void main() {
+  testWidgets(
+      'uses selected document font across Markdown and highlighted code',
+      (tester) async {
+    final controller = ScrollController();
+    addTearDown(controller.dispose);
+    await tester.binding.setSurfaceSize(const Size(1200, 1800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(fontFamily: 'Inter'),
+        home: Scaffold(
+          body: MarkdownViewer(
+            content: '''
+# Heading
+
+Plain **bold** *italic* ***both*** [link](https://example.com) and `inline`.
+
+> Quote
+
+- List item
+
+| Column |
+| ------ |
+| Cell   |
+
+```dart
+void main() {}
+```
+''',
+            scrollController: controller,
+            basePath: '.',
+            bodyFontFamily: 'OpenDyslexic',
+            codeFontFamily: 'OpenDyslexic',
+            searchQuery: 'bold',
+          ),
+        ),
+      ),
+    );
+    final rendered = <String, TextStyle>{};
+    void collect(InlineSpan span, TextStyle inherited) {
+      if (span is! TextSpan) return;
+      final style = inherited.merge(span.style);
+      if (span.text != null && span.text!.trim().isNotEmpty) {
+        rendered[span.text!] = style;
+      }
+      for (final child in span.children ?? <InlineSpan>[]) {
+        collect(child, style);
+      }
+    }
+
+    for (final element in find.byType(SelectableText).evaluate()) {
+      final widget = element.widget as SelectableText;
+      if (widget.textSpan != null) {
+        collect(widget.textSpan!, widget.style ?? const TextStyle());
+      }
+    }
+    for (final element in find.byType(Text).evaluate()) {
+      final widget = element.widget as Text;
+      if (widget.textSpan != null) {
+        collect(widget.textSpan!, widget.style ?? const TextStyle());
+      } else if (widget.data != null) {
+        rendered[widget.data!] = widget.style ?? const TextStyle();
+      }
+    }
+    for (final text in [
+      'Heading',
+      'Plain ',
+      'bold',
+      'italic',
+      'both',
+      'link',
+      'inline',
+      'Quote',
+      'List item',
+      'Column',
+      'Cell',
+      'void',
+    ]) {
+      expect(rendered[text]?.fontFamily, 'OpenDyslexic', reason: text);
+    }
+    final code = rendered.entries.where((entry) => entry.key.contains('main'));
+    expect(code, isNotEmpty);
+    for (final entry in code) {
+      expect(entry.value.fontFamily, 'OpenDyslexic', reason: entry.key);
+    }
+    expect(rendered['bold']?.fontWeight, FontWeight.bold);
+    expect(rendered['bold']?.backgroundColor, isNotNull);
+    expect(rendered['italic']?.fontStyle, FontStyle.italic);
+    expect(rendered['both']?.fontWeight, FontWeight.bold);
+    expect(rendered['both']?.fontStyle, FontStyle.italic);
+  });
+
   testWidgets('highlights search matches without changing their case', (
     tester,
   ) async {
@@ -415,7 +507,8 @@ void main() {}
 
     await tester.pump();
 
-    final highlightView = tester.widget<SelectableHighlightView>(find.byType(SelectableHighlightView));
+    final highlightView = tester
+        .widget<SelectableHighlightView>(find.byType(SelectableHighlightView));
     expect(highlightView.textStyle?.fontSize, 27.0);
   });
 

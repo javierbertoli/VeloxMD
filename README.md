@@ -74,6 +74,9 @@ Otherwise, see [Building from source](#building-from-source) below.
 - **View document source:** press `Ctrl+U` to toggle between raw Markdown and rendered view.
 - **Reload a file:** press `Ctrl+R` or `F5`.
 - **Change font size:** press `Ctrl++`, `Ctrl+-`, or `Ctrl+0`.
+- **Use OpenDyslexic:** click the font button in the toolbar to switch document
+  text to OpenDyslexic. Click again to restore your normal fonts. The choice
+  is remembered when you restart the app.
 - **Follow links:** click a link to jump to a heading (`#section`), open another
   local Markdown file (`other.md`, `other.md#section`), or open web links and
   other files in your default app. Go back / forward with `Alt+Left` /
@@ -146,6 +149,20 @@ Set `ui_font` (body text + UI chrome) and/or `mono_font` (code blocks) to an
 installed font family name, e.g. `"ui_font": "Noto Sans"`. Leave a value
 `null` (or omit it) to keep following the desktop's font for that role.
 Restart VeloxMD after editing.
+
+The toolbar's **OpenDyslexic** toggle overrides the fonts only in the rendered
+document and the read-only source view, including inline and fenced code.
+OpenDyslexic is proportional, so source/code text is not monospaced while it
+is enabled. Font size and text margins still work normally. The interface,
+rendered Mermaid diagrams and PDF exports keep their existing fonts.
+Disabling the toggle restores the system/configured fonts without changing
+`fonts.json`.
+
+All four OpenDyslexic styles (regular, bold, italic and bold italic) and their
+SIL Open Font License are bundled in Linux and Windows builds. No download
+or system font installation is needed. The license is included at
+`data/flutter_assets/assets/fonts/OFL-OpenDyslexic.txt` in the application
+bundle; the original font files are redistributed unmodified.
 
 ---
 

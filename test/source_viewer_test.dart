@@ -6,7 +6,8 @@ import 'package:veloxmd/widgets/source_viewer.dart';
 
 void main() {
   group('SourceViewer', () {
-    testWidgets('renders raw content accurately and unrendered', (tester) async {
+    testWidgets('renders raw content accurately and unrendered',
+        (tester) async {
       final controller = ScrollController();
       addTearDown(controller.dispose);
 
@@ -60,13 +61,41 @@ void main() {
       );
     });
 
+    testWidgets('uses the selected family for selectable source text',
+        (tester) async {
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SourceViewer(
+              content: '# Source\n\n**Bold** and `code`',
+              scrollController: controller,
+              codeFontFamily: 'OpenDyslexic',
+              fontScale: 1.5,
+            ),
+          ),
+        ),
+      );
+      final text =
+          tester.widget<Text>(find.text('# Source\n\n**Bold** and `code`'));
+      expect(text.style?.fontFamily, 'OpenDyslexic');
+      expect(text.style?.fontSize, 21);
+      expect(find.byType(SelectionArea), findsOneWidget);
+    });
+
     test('KeyAction.toggleViewSource defaults to ctrl+u', () async {
       final service = await KeybindingsService.load();
       expect(service.labels(KeyAction.toggleViewSource), contains('Ctrl+U'));
       final activators = service[KeyAction.toggleViewSource];
       expect(
         activators.any(
-          (a) => a.trigger == LogicalKeyboardKey.keyU && a.control && !a.shift && !a.alt && !a.meta,
+          (a) =>
+              a.trigger == LogicalKeyboardKey.keyU &&
+              a.control &&
+              !a.shift &&
+              !a.alt &&
+              !a.meta,
         ),
         isTrue,
       );
